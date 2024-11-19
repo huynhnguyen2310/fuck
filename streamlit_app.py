@@ -1,56 +1,40 @@
-import streamlit as st
-from openai import OpenAI
+import pandas as pd
 
-# Show title and description.
-st.title("💬 Chatbot")
-st.write(
-    "This is a simple chatbot that uses OpenAI's GPT-3.5 model to generate responses. "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-    "You can also learn how to build this app step by step by [following our tutorial](https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps)."
+df = pd.read_csv('us-population-2010-2019.csv')
+
+# Reshape
+df = pd.melt(df, id_vars=['states', 'id'], var_name='year', value_name='population')
+
+# Chuyển đổi kiểu dữ liệu
+df['states'] = df['states'].astype(str)
+df['id'] = df['id'].astype(int)
+df['year'] = df['year'].astype(int)
+df['population'] = df['population'].str.replace(',','').astype(int)
+
+def diff_population_previous(input_df, input_year):
+  df_selected_year = input_df[input_df['year'] == input_year].reset_index()
+  df_previous_year = input_df[input_df['year'] == (input_year - 1)].reset_index()
+  df_selected_year['diff_population'] = df_selected_year.population.sub(df_previous_year.population, fill_value = 0)
+
+  return df_selected_year
+
+# Lấy danh sách các bang dân số bị giảm so với năm trước trong 2014
+df_diff_2014_2013 = diff_population_previous(df, 2014)
+df_decrease_2014_2013 = df_diff_2014_2013[df_diff_2014_2013.diff_population < 0]
+
+df_decrease_2014_2013
+
+# Tính phần trăm trên tổng số các bang
+len(df_decrease_2014_2013) / len(df_diff_2014_2013) * 100
+
+import altair as alt
+
+alt.themes.enable('dark')
+
+heatmap = alt.Chart(df).mark_rect().encode(
+    x = alt.X('states:O'),
+    y = alt.Y('year:O'),
+    color = alt.Color('max(population):Q')
 )
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
-
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
-
-    # Create a session state variable to store the chat messages. This ensures that the
-    # messages persist across reruns.
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    # Display the existing chat messages via `st.chat_message`.
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # Create a chat input field to allow the user to enter a message. This will display
-    # automatically at the bottom of the page.
-    if prompt := st.chat_input("What is up?"):
-
-        # Store and display the current prompt.
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        # Generate a response using the OpenAI API.
-        stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
-            ],
-            stream=True,
-        )
-
-        # Stream the response to the chat using `st.write_stream`, then store it in 
-        # session state.
-        with st.chat_message("assistant"):
-            response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+heatmap
